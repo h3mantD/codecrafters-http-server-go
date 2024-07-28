@@ -44,7 +44,8 @@ func main() {
 		case "":
 			req.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 		case "echo":
-			body := "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\n" + endpoint[2]
+
+			body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(endpoint[2]), endpoint[2])
 			req.Write([]byte(body))
 		default:
 			req.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
