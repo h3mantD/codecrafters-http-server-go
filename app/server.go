@@ -24,7 +24,7 @@ var directory *string
 
 func main() {
 	directory = flag.String("directory", "/tmp/", "Directory from file has to be fetched.")
-
+	flag.Parse()
 	// You can use print statements as follows for debugging, they'll be visible when running tests.
 	fmt.Println("Logs from your program will appear here!")
 
@@ -84,7 +84,7 @@ func handleRequest(conn net.Conn) {
 	case "files":
 		f, err := os.ReadFile(*directory + endpoint[2])
 		if err != nil {
-			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n " + err.Error()))
+			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 			break
 		}
 		body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(string(f)), string(f))
