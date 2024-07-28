@@ -1,15 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strings"
-	// Uncomment this block to pass the first stage
-	// "net"
-	// "os"
 )
 
 func main() {
@@ -26,30 +21,48 @@ func main() {
 	defer l.Close()
 
 	for {
-		req, err := l.Accept()
+		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
 
-		data, err := bufio.NewReader(req).ReadString('\n')
+		buf := make([]byte, 1024)
+		length, err := conn.Read(buf)
 		if err != nil {
-			log.Print(err.Error())
+			fmt.Printf("Error reading: %#v\n", err)
 			return
 		}
 
-		dataFields := strings.Fields(data)
+		var requestData []string
+		lines := strings.Split(string(buf[:length]), "\n")
+		requestData = append(requestData, lines...)
+
+		dataFields := strings.Fields(requestData[0])
 		endpoint := strings.Split(dataFields[1], "/")
+
 		switch endpoint[1] {
 		case "":
-			req.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+			conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 		case "echo":
-
 			body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(endpoint[2]), endpoint[2])
-			req.Write([]byte(body))
+			conn.Write([]byte(body))
+		case "user-agent":
+			var userAgent string
+			for _, header := range requestData {
+				headerData := strings.Split(header, ":")
+				if headerData[0] == "User-Agent" {
+					userAgent = strings.TrimSpace(headerData[1])
+					break
+				}
+			}
+			body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)
+			conn.Write([]byte(body))
 		default:
-			req.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 		}
+
+		conn.Close()
 
 	}
 }
