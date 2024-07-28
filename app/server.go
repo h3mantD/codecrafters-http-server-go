@@ -84,7 +84,7 @@ func handleRequest(conn net.Conn) {
 	case "files":
 		f, err := os.ReadFile(*directory + endpoint[2])
 		if err != nil {
-			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n " + err.Error()))
 			break
 		}
 		body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(string(f)), string(f))
