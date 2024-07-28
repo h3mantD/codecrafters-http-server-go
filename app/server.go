@@ -82,16 +82,57 @@ func handleRequest(conn net.Conn) {
 		body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)
 		conn.Write([]byte(body))
 	case "files":
-		f, err := os.ReadFile(*directory + endpoint[2])
+		if dataFields[0] == "GET" {
+			f, err := os.ReadFile(*directory + endpoint[2])
+			if err != nil {
+				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+				break
+			}
+			body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(string(f)), string(f))
+			conn.Write([]byte(body))
+			return
+		}
+
+		// if method is POST
+		body := parseBody(requestData)
+		file, err := os.OpenFile(*directory+endpoint[2], os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
+			fmt.Println("not able to find file :: ", err.Error())
 			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 			break
 		}
-		body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(string(f)), string(f))
-		conn.Write([]byte(body))
+		defer file.Close()
+
+		cleanedBody := strings.ReplaceAll(body, "\x00", "")
+		cleanedBody = strings.ReplaceAll(cleanedBody, "\r", "")
+		if _, err := file.WriteString(cleanedBody); err != nil {
+			fmt.Println("not able to write :: ", err.Error())
+			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+			break
+		}
+
+		conn.Write([]byte("HTTP/1.1 201 Created\r\n\r\n"))
 	default:
 		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 	}
 
 	conn.Close()
+}
+
+func parseBody(requestData []string) string {
+	var bodyDelimiterFound bool
+	var body string
+	for _, line := range requestData {
+		if line == "\r" {
+			bodyDelimiterFound = true
+		}
+
+		if !bodyDelimiterFound {
+			continue
+		}
+
+		body += line
+	}
+
+	return body
 }
