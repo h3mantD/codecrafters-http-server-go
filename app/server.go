@@ -39,10 +39,15 @@ func main() {
 		}
 
 		dataFields := strings.Fields(data)
-		if dataFields[1] != "/" {
-			req.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-		} else {
+		endpoint := strings.Split(dataFields[1], "/")
+		switch endpoint[1] {
+		case "":
 			req.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+		case "echo":
+			body := "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\n" + endpoint[2]
+			req.Write([]byte(body))
+		default:
+			req.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
 		}
 
 	}
