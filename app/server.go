@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"log"
 	"net"
 	"os"
+	"strings"
 	// Uncomment this block to pass the first stage
 	// "net"
 	// "os"
@@ -22,12 +25,25 @@ func main() {
 	}
 	defer l.Close()
 
-	req, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+	for {
+		req, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+
+		data, err := bufio.NewReader(req).ReadString('\n')
+		if err != nil {
+			log.Print(err.Error())
+			return
+		}
+
+		dataFields := strings.Fields(data)
+		if dataFields[1] != "/" {
+			req.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		} else {
+			req.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+		}
+
 	}
-
-	req.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-
 }
