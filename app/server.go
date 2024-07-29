@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -16,8 +17,14 @@ type RequestHeader struct {
 type RequestData struct {
 	method   string
 	endpoint string
-	headers  []RequestHeader
+	headers  map[string]string
 	body     string
+}
+
+type ResponseData struct {
+	statusCode string
+	headers    map[string]string
+	body       string
 }
 
 var directory *string
@@ -61,78 +68,114 @@ func handleRequest(conn net.Conn) {
 	lines := strings.Split(string(buf[:length]), "\n")
 	requestData = append(requestData, lines...)
 
-	dataFields := strings.Fields(requestData[0])
-	endpoint := strings.Split(dataFields[1], "/")
+	request := parseRequestData(requestData)
 
-	switch endpoint[1] {
-	case "":
-		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-	case "echo":
-		body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(endpoint[2]), endpoint[2])
-		conn.Write([]byte(body))
-	case "user-agent":
-		var userAgent string
-		for _, header := range requestData {
-			headerData := strings.Split(header, ":")
-			if headerData[0] == "User-Agent" {
-				userAgent = strings.TrimSpace(headerData[1])
-				break
-			}
-		}
-		body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(userAgent), userAgent)
-		conn.Write([]byte(body))
-	case "files":
-		if dataFields[0] == "GET" {
-			f, err := os.ReadFile(*directory + endpoint[2])
+	response := ResponseData{
+		statusCode: "200 OK",
+		headers:    make(map[string]string),
+	}
+
+	if request.endpoint == "/" {
+		sendResponse(conn, request, response)
+	} else if strings.HasPrefix(request.endpoint, "/echo") {
+		endpointFields := strings.Split(request.endpoint, "/")
+		response.headers["Content-Type"] = "text/plain"
+		response.headers["Content-Length"] = strconv.Itoa(len(endpointFields[2]))
+		response.body = endpointFields[2]
+		sendResponse(conn, request, response)
+	} else if strings.HasPrefix(request.endpoint, "/user-agent") {
+		response.headers["Content-Type"] = "text/plain"
+		response.headers["Content-Length"] = strconv.Itoa(len(request.headers["User-Agent"]))
+		response.body = request.headers["User-Agent"]
+		sendResponse(conn, request, response)
+	} else if strings.HasPrefix(request.endpoint, "/files") {
+		endpointFields := strings.Split(request.endpoint, "/")
+		if request.method == "GET" {
+			f, err := os.ReadFile(*directory + endpointFields[2])
 			if err != nil {
-				conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-				break
+				respondWithNotFound(conn, request, response)
+				return
 			}
-			body := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %d\r\n\r\n%s", len(string(f)), string(f))
-			conn.Write([]byte(body))
+
+			response.headers["Content-Type"] = "application/octet-stream"
+			response.headers["Content-Length"] = strconv.Itoa(len(string(f)))
+			response.body = string(f)
+			sendResponse(conn, request, response)
 			return
 		}
 
 		// if method is POST
-		body := parseBody(requestData)
-		file, err := os.OpenFile(*directory+endpoint[2], os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		body := request.body
+		file, err := os.OpenFile(*directory+endpointFields[2], os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
-			fmt.Println("not able to find file :: ", err.Error())
-			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-			break
+			respondWithNotFound(conn, request, response)
+			return
 		}
 		defer file.Close()
 
 		cleanedBody := strings.ReplaceAll(body, "\x00", "")
 		cleanedBody = strings.ReplaceAll(cleanedBody, "\r", "")
 		if _, err := file.WriteString(cleanedBody); err != nil {
-			fmt.Println("not able to write :: ", err.Error())
-			conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
-			break
+			respondWithNotFound(conn, request, response)
+			return
 		}
 
-		conn.Write([]byte("HTTP/1.1 201 Created\r\n\r\n"))
-	default:
-		conn.Write([]byte("HTTP/1.1 404 Not Found\r\n\r\n"))
+		response.statusCode = "201 Created"
+		sendResponse(conn, request, response)
+	} else {
+		respondWithNotFound(conn, request, response)
 	}
 
-	conn.Close()
+	defer conn.Close()
 }
 
-func parseBody(requestData []string) string {
-	var bodyDelimiterFound bool
-	var body string
-	for _, line := range requestData {
+func parseRequestData(reqData []string) RequestData {
+	requestData := RequestData{
+		headers: make(map[string]string),
+	}
+	var updateBody bool
+	for i, line := range reqData {
 		if line == "\r" {
-			bodyDelimiterFound = true
+			updateBody = true
 		}
 
-		if !bodyDelimiterFound {
+		if i == 0 {
+			endpointFields := strings.Fields(line)
+			requestData.method = strings.TrimSpace(endpointFields[0])
+			requestData.endpoint = strings.TrimSpace(endpointFields[1])
 			continue
 		}
 
-		body += line
+		if updateBody || !strings.Contains(line, ":") {
+
+			requestData.body = requestData.body + line
+		} else if strings.Contains(line, ":") && strings.HasSuffix(line, "\r") && len(strings.Split(line, ":")) == 2 {
+			headerDetails := strings.Split(line, ":")
+			requestData.headers[strings.TrimSpace(headerDetails[0])] = strings.TrimSpace(headerDetails[1])
+		}
 	}
 
-	return body
+	return requestData
+}
+
+func sendResponse(conn net.Conn, request RequestData, respData ResponseData) {
+
+	if value, exists := request.headers["Accept-Encoding"]; exists {
+		if value == "gzip" {
+			respData.headers["Content-Encoding"] = value
+		}
+	}
+
+	response := "HTTP/1.1 " + respData.statusCode + "\r\n"
+	for key, value := range respData.headers {
+		response += key + ": " + value + "\r\n"
+	}
+	response += "\r\n" + respData.body
+
+	conn.Write([]byte(response))
+}
+
+func respondWithNotFound(conn net.Conn, request RequestData, response ResponseData) {
+	response.statusCode = "404 Not Found"
+	sendResponse(conn, request, response)
 }
