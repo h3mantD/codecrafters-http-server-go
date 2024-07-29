@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"flag"
 	"fmt"
 	"net"
@@ -175,6 +177,16 @@ func sendResponse(conn net.Conn, request RequestData, respData ResponseData) {
 
 		if supportsGzip {
 			respData.headers["Content-Encoding"] = "gzip"
+
+			var buff bytes.Buffer
+			gz := gzip.NewWriter(&buff)
+			if _, err := gz.Write([]byte(respData.body)); err != nil {
+				respData.body = ""
+			}
+			gz.Close()
+
+			respData.headers["Content-Length"] = strconv.Itoa(len(buff.Bytes()))
+			respData.body = buff.String()
 		}
 	}
 
