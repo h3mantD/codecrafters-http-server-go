@@ -160,9 +160,21 @@ func parseRequestData(reqData []string) RequestData {
 
 func sendResponse(conn net.Conn, request RequestData, respData ResponseData) {
 
-	if value, exists := request.headers["Accept-Encoding"]; exists {
-		if value == "gzip" {
-			respData.headers["Content-Encoding"] = value
+	if encodings, exists := request.headers["Accept-Encoding"]; exists {
+		supportsGzip := false
+		if strings.Contains(encodings, ",") {
+			for _, encoding := range strings.Split(encodings, ",") {
+				if strings.TrimSpace(encoding) == "gzip" {
+					supportsGzip = true
+					break
+				}
+			}
+		} else {
+			supportsGzip = request.headers["Accept-Encoding"] == "gzip"
+		}
+
+		if supportsGzip {
+			respData.headers["Content-Encoding"] = "gzip"
 		}
 	}
 
